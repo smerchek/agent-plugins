@@ -1,0 +1,10 @@
+{
+  "name": "agent-plugins",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "check": "bun scripts/build.ts --check",
+    "validate:claude": "for p in plugins/*/; do claude plugin validate \"$p\" || exit 1; done"
+  }
+}
