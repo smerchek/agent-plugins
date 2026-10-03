@@ -8,7 +8,6 @@ import type { HillsHill, HillsOutlook, HillsPerspective, HillsPoint } from '../t
 // its numbers were measured or logged. A second, history-free model call then
 // gives the outside read on how much higher there is to go.
 
-const PANE = 'hills'
 const MIN_GAP_MS = 60_000
 const OUTSIDE_MODEL = 'sonnet'
 const CLIMB_WORDS = /hill.?climb|optimi[sz]e|shrink|slim (down|the)|reduce .{0,30}(size|time|latency|cost|memory)|iterate (on|until)|benchmark/i
@@ -71,6 +70,7 @@ const toHill = (raw: any): HillsHill | undefined => {
   return {
     id,
     label: str(raw.label) ?? id,
+    short: (str(raw.short) ?? str(raw.label) ?? id).slice(0, 5),
     unit: str(raw.unit),
     direction: raw.direction === 'lower' ? 'lower' : 'higher',
     baseline,
@@ -81,7 +81,7 @@ const toHill = (raw: any): HillsHill | undefined => {
   }
 }
 
-const extractPrompt = (prior: HillsHill[]) => `Set the task aside for one reply. A progress panel beside this conversation needs data.
+const extractPrompt = (prior: HillsHill[]) => `Set the task aside for one reply. A progress display above the prompt needs data.
 
 Look back over this whole conversation for hillclimbing: repeated attempts to move a measurable metric (an image size, a build or boot time, a latency, a pass rate, a bundle size, a cost, an error count) where each attempt is measured and kept or reverted.
 
@@ -89,6 +89,7 @@ Reply with JSON only, no prose:
 {"climbs": [{
   "id": "short-kebab-id",
   "label": "what the metric is, under 5 words",
+  "short": "one word or acronym of at most 5 characters the person would recognize, unique among the climbs (img, web, boot, cov)",
   "unit": "MB" | "s" | "%" | null,
   "direction": "lower" | "higher",
   "baseline": <number>,
@@ -125,7 +126,6 @@ async function readClimbs($: $, isForced = false) {
     if (found.length === 0) return
     const sig = (list: HillsHill[]) => list.map(h => `${h.id}:${h.signature}:${h.target}`).join('|')
     if (sig(prior) !== sig(found)) await update($, hills, () => found)
-    if (prior.length === 0) void $.ui.open({ id: PANE, title: 'Hills' })
     await assessStale($, found)
   } finally {
     isReading = false
@@ -179,88 +179,124 @@ async function assessStale($: $, list: HillsHill[], isForced = false) {
 
 // ---------- drawing ----------
 
-type Seg = { text: string; color?: string; dim?: boolean; bold?: boolean }
+type Seg = { text: string; color?: string; dim?: boolean }
 
-const EIGHTHS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+const HILL_CELLS = 7 // each cell is 2 dots wide, so 14 dot columns
+const HILL_DOTS = 8 // two rows of 4 dots
+const PEAK = 10 // dot column of the summit
+const GAP = 2
+const CARD_WIDTH = 46
 
 const smooth = (t: number) => t * t * (3 - 2 * t)
 
-// Height of the main hill at x, in [0,1] of the drawing's rows.
-const hillAt = (x: number, peakX: number, cols: number, rows: number) => {
-  const peak = (rows - 1) / rows
-  if (x <= peakX) return 0.06 + (peak - 0.06) * smooth(x / Math.max(1, peakX))
-  const t = (x - peakX) / Math.max(1, cols - 1 - peakX)
-  return peak - 0.35 * smooth(t)
-}
+// Dot height of the hill at dot column x: a gradual climb to the summit, then a short drop.
+const dotsAt = (x: number) =>
+  x <= PEAK
+    ? Math.round(1 + (HILL_DOTS - 1) * smooth(x / PEAK))
+    : Math.round(HILL_DOTS - 2.5 * smooth((x - PEAK) / (HILL_CELLS * 2 - 1 - PEAK)))
 
-// A farther ridge behind the hill on the right: how much more there is past this summit.
-const ridgeAt = (x: number, cols: number, outlook?: HillsOutlook) => {
-  const top = outlook === 'more-hills' ? 1 : outlook === 'slowing' ? 0.7 : 0
-  if (!top) return 0
-  const t = Math.max(0, (x - cols * 0.55) / (cols * 0.45))
-  return top * smooth(Math.min(1, t))
-}
+// Braille bits for dot row 0-3 (top to bottom) in the left and right column of a cell.
+const LEFT = [0x01, 0x02, 0x04, 0x40]
+const RIGHT = [0x08, 0x10, 0x20, 0x80]
 
-const merge = (segs: Seg[]): Seg[] =>
-  segs.reduce<Seg[]>((out, s) => {
-    const last = out[out.length - 1]
-    if (last && last.color === s.color && last.dim === s.dim && last.bold === s.bold) last.text += s.text
-    else out.push({ ...s })
-    return out
-  }, [])
-
-const drawHill = (hill: HillsHill, view: HillsPerspective | undefined, cols: number, rows: number): Seg[][] => {
-  const start = hill.baseline
-  const now = best(hill)
+const progressOf = (hill: HillsHill, view?: HillsPerspective) => {
   const summit = summitOf(hill, view)
-  // No target and no outside estimate yet: the top is unknown, so stand halfway.
-  const span = summit === undefined ? 0 : summit - start
-  const progress = summit === undefined ? 0.5 : span === 0 ? 1 : Math.min(1, Math.max(0, (now - start) / span))
-  const peakX = Math.round((cols - 1) * 0.7)
-  const climberX = Math.round(progress * peakX)
-  const heights = Array.from({ length: cols }, (_, x) => hillAt(x, peakX, cols, rows) * rows * 8)
-  const ridges = Array.from({ length: cols }, (_, x) => ridgeAt(x, cols, view?.outlook) * rows * 8)
-  const topRow = (x: number) => rows - 1 - Math.floor(Math.max(0, heights[x]! - 1) / 8)
+  if (summit === undefined) return undefined
+  const span = summit - hill.baseline
+  return span === 0 ? 1 : Math.min(1, Math.max(0, (best(hill) - hill.baseline) / span))
+}
 
-  const lines: Seg[][] = []
-  for (let r = 0; r < rows; r++) {
-    const floor = (rows - 1 - r) * 8
-    const segs: Seg[] = []
-    for (let x = 0; x < cols; x++) {
-      const fill = Math.round(Math.min(8, Math.max(0, heights[x]! - floor)))
-      const ridgeFill = Math.round(Math.min(8, Math.max(0, ridges[x]! - floor)))
-      const isClimber = x === climberX && r === topRow(x) - 1
-      const isFlag = x === peakX && r === topRow(x) - 1
-      if (isClimber) segs.push({ text: '●', color: 'yellow', bold: true })
-      else if (isFlag) segs.push({ text: summit === undefined ? '?' : summit === hill.target ? '⚑' : '⚐', color: 'white' })
-      else if (fill > 0) segs.push({ text: EIGHTHS[fill]!, color: x <= climberX ? 'green' : 'gray' })
-      else if (ridgeFill > 0) segs.push({ text: EIGHTHS[ridgeFill]!, color: 'blue', dim: true })
-      else segs.push({ text: ' ' })
+// Two rows of braille cells. Climbed dot columns are solid; the rest of the hill is
+// only its outline, so the climber moves one dot column at a time though a cell has one color.
+const drawMini = (hill: HillsHill, view?: HillsPerspective): Seg[][] => {
+  const progress = progressOf(hill, view) ?? 0.5
+  const climbed = Math.round(progress * PEAK)
+  const rows: Seg[][] = [[], []]
+  for (let row = 0; row < 2; row++) {
+    for (let cell = 0; cell < HILL_CELLS; cell++) {
+      let bits = 0
+      for (const [side, x] of [[LEFT, cell * 2], [RIGHT, cell * 2 + 1]] as const) {
+        const height = dotsAt(x)
+        for (let dot = 0; dot < 4; dot++) {
+          const fromBottom = (1 - row) * 4 + (3 - dot)
+          const isShown = x <= climbed ? fromBottom < height : fromBottom === height - 1
+          if (isShown) bits |= side[dot]!
+        }
+      }
+      const isClimbed = cell * 2 <= climbed
+      rows[row]!.push({ text: String.fromCharCode(0x2800 + bits), color: isClimbed ? 'green' : 'gray', dim: !isClimbed })
     }
-    lines.push(merge(segs))
   }
+  // A faint next hill when the outside read sees more to climb past this one.
+  if (view?.outlook === 'more-hills') {
+    rows[0]!.push({ text: ' ' })
+    rows[1]!.push({ text: '⣠⣴', color: 'blue', dim: true })
+  }
+  return rows
+}
+
+// Kept rounds green, reverted red, one sparkline cell each.
+const SPARK = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+const drawRounds = (hill: HillsHill, view?: HillsPerspective): Seg[] => {
+  const summit = summitOf(hill, view) ?? best(hill)
+  const span = summit - hill.baseline || 1
+  return hill.points.map(p => {
+    const t = Math.min(1, Math.max(0, (p.value - hill.baseline) / span))
+    return { text: SPARK[Math.round(t * 7)]!, color: p.isKept ? 'green' : 'red' }
+  })
+}
+
+const wrap = (text: string, width: number) => {
+  const lines: string[] = []
+  let line = ''
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (line && line.length + 1 + word.length > width) {
+      lines.push(line)
+      line = word
+    } else line = line ? `${line} ${word}` : word
+  }
+  if (line) lines.push(line)
   return lines
 }
 
-// One cell per round: kept rounds green, reverted red, scaled baseline→summit.
-const drawRounds = (hill: HillsHill, view: HillsPerspective | undefined): Seg[] => {
-  const summit = summitOf(hill, view) ?? best(hill)
-  const span = summit - hill.baseline || 1
-  return merge(
-    hill.points.map(p => {
-      const t = Math.min(1, Math.max(0, (p.value - hill.baseline) / span))
-      return { text: EIGHTHS[Math.max(1, Math.round(t * 8))]!, color: p.isKept ? 'green' : 'red' }
-    }),
-  )
-}
-
 const OUTLOOK_TEXT: Record<HillsOutlook, string> = {
-  climbing: 'still climbing',
-  slowing: 'leveling off',
-  summit: 'at the top of this hill',
-  'more-hills': 'higher hills past this one',
+  climbing: 'Still climbing',
+  slowing: 'Leveling off',
+  summit: 'At the top of this hill',
+  'more-hills': 'Higher hills past this one',
 }
 
+// The hover card's lines, so its height is known before it is placed.
+const cardLines = (hill: HillsHill, view?: HillsPerspective): Seg[][] => {
+  const inner = CARD_WIDTH - 4
+  const now = best(hill)
+  const summit = summitOf(hill, view)
+  const progress = progressOf(hill, view)
+  const tried = hill.points.length - 1
+  const reverted = hill.points.filter(p => !p.isKept).length
+  const lines: Seg[][] = [
+    [{ text: hill.label }],
+    [
+      { text: `${fmt(hill.baseline, hill.unit)} → ` },
+      { text: fmt(now, hill.unit), color: 'green' },
+      ...(progress !== undefined ? [{ text: `  ${Math.round(progress * 100)}% up`, color: 'yellow' }] : []),
+    ],
+    ...(summit !== undefined
+      ? [[{ text: `${summit === hill.target ? 'target' : 'est. ceiling'} ${fmt(summit, hill.unit)}`, dim: true }]]
+      : []),
+    [
+      { text: 'rounds ', dim: true },
+      ...drawRounds(hill, view),
+      { text: ` ${tried} tried${reverted ? `, ${reverted} reverted` : ''}`, dim: true },
+    ],
+  ]
+  if (view) {
+    lines.push([{ text: OUTLOOK_TEXT[view.outlook], color: view.outlook === 'more-hills' ? 'cyan' : 'yellow' }])
+    for (const l of wrap(view.line, inner)) lines.push([{ text: l, dim: true }])
+    for (const idea of view.nextHills) lines.push([{ text: `⛰ ${idea}`.slice(0, inner), dim: true }])
+  }
+  return lines
+}
 
 // ---------- hooks ----------
 
@@ -268,9 +304,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'hills',
-      description: 'Show hillclimb progress as hills (/hills assess for a fresh outside read, /hills off to stop)',
+      description: 'Read the hillclimb now (/hills assess for a fresh outside read, /hills off to stop)',
     })
-    if ((await read($, hills)).length > 0) void $.ui.open({ id: PANE, title: 'Hills' })
     return next(e)
   })
 
@@ -291,30 +326,31 @@ export const register: Register = on => {
     const arg = e.args.trim()
     if (arg === 'off') {
       await update($, isTracking, () => false)
-      return { text: 'Hills stopped reading this session.' }
+      return { text: 'Hills hidden and stopped reading this session.' }
     }
     await update($, isTracking, () => true)
-    await $.ui.open({ id: PANE, title: 'Hills' })
     if (arg === 'assess') {
       $.clock.after(0, () => void read($, hills).then(list => assessStale($, list, true)).catch(() => undefined))
       return { text: 'Asking for a fresh outside read.' }
     }
     $.clock.after(0, () => void readClimbs($, true).catch(() => undefined))
-    return { text: 'Hills pane opened; reading the climb from this session.' }
+    return { text: 'Reading the climb from this session.' }
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, hills)
+    if (e.props.hasSurvey || list.length === 0 || !(await read($, isTracking))) return next(e)
+
+    const { Box, Text } = $.ui.resolve(e)
     const views = await read($, perspectives)
     const note = await read($, status)
-    const cols = Math.max(24, Math.min(72, (e.props.bodyColumns ?? 48) - 2))
-    const rows = list.length > 3 ? 4 : list.length > 1 ? 5 : 7
+    const width = HILL_CELLS + 2 + GAP
+    const fits = Math.max(1, Math.floor((e.props.bodyColumns - 2) / width))
 
-    const line = (segs: Seg[]) => (
+    const row = (segs: Seg[]) => (
       <Box flexDirection="row">
         {segs.map(s => (
-          <Text color={s.color} dimColor={s.dim} bold={s.bold}>
+          <Text color={s.color} dimColor={s.dim}>
             {s.text}
           </Text>
         ))}
@@ -322,64 +358,39 @@ export const register: Register = on => {
     )
 
     return (
-      <Box flexDirection="column">
-        {list.length === 0 && !note && <Text dimColor>No climb found in this session yet.</Text>}
-        {list.map(hill => {
+      <Box flexDirection="row" columnGap={GAP}>
+        {list.slice(0, fits).map((hill, i) => {
           const view = views[hill.id]
-          const now = best(hill)
-          const change = hill.baseline === 0 ? 0 : ((now - hill.baseline) / Math.abs(hill.baseline)) * 100
-          const summit = summitOf(hill, view)
-          const span = summit === undefined ? 0 : summit - hill.baseline
-          const pct = span ? Math.round(Math.min(1, Math.max(0, (now - hill.baseline) / span)) * 100) : undefined
-          const reverted = hill.points.filter(p => !p.isKept).length
+          const card = cardLines(hill, view)
+          const x = i * width
           return (
-            <Box flexDirection="column" marginBottom={1}>
-              <Text bold>{hill.label}</Text>
-              {drawHill(hill, view, cols, rows).map(line)}
-              <Text>
-                {fmt(hill.baseline, hill.unit)} → <Text bold color="green">{fmt(now, hill.unit)}</Text>{' '}
-                <Text dimColor>
-                  ({change >= 0 ? '+' : ''}
-                  {change.toFixed(0)}%)
-                </Text>
-                {summit !== undefined && (
-                  <Text dimColor>
-                    {'  '}
-                    {summit === hill.target ? 'target' : 'est. ceiling'} {fmt(summit, hill.unit)}
-                  </Text>
-                )}
-                {pct !== undefined && <Text color="yellow"> · {pct}% of the way</Text>}
+            <Box key={`hill-${hill.id}`} flexDirection="column" width={width - GAP}>
+              {drawMini(hill, view).map(row)}
+              <Text dimColor wrap="truncate">
+                {hill.short}
               </Text>
-              <Box flexDirection="row">
-                <Text dimColor>rounds </Text>
-                {line(drawRounds(hill, view))}
-                <Text dimColor>
-                  {' '}
-                  {hill.points.length - 1} tried{reverted ? `, ${reverted} reverted` : ''}
-                </Text>
+              <Box
+                position="absolute"
+                top={-(card.length + 2)}
+                left={Math.min(0, e.props.bodyColumns - x - CARD_WIDTH)}
+                width={CARD_WIDTH}
+                display="none"
+                hover={{ display: 'flex' }}
+                flexDirection="column"
+                borderStyle="round"
+                borderColor="gray"
+                paddingX={1}
+              >
+                {card.map(row)}
               </Box>
-              {view && (
-                <Box flexDirection="column">
-                  <Text>
-                    <Text bold color={view.outlook === 'more-hills' ? 'cyan' : view.outlook === 'summit' ? 'white' : 'yellow'}>
-                      {OUTLOOK_TEXT[view.outlook]}
-                    </Text>
-                    <Text dimColor>: {view.line}</Text>
-                  </Text>
-                  {view.nextHills.map(idea => (
-                    <Text dimColor>  ⛰ {idea}</Text>
-                  ))}
-                </Box>
-              )}
             </Box>
           )
         })}
-        {note && <Text dimColor>{note}</Text>}
-        <Box flexDirection="row">
-          <Button key="read" label="Re-read climb" onPress={() => void readClimbs($, true)} />
-          <Text> </Text>
-          <Button key="assess" label="Fresh outside read" onPress={() => void assessStale($, list, true)} />
-        </Box>
+        {note && (
+          <Text dimColor wrap="truncate">
+            {note}
+          </Text>
+        )}
       </Box>
     )
   })

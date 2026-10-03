@@ -1,15 +1,20 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hills",
-  "version": "0.1.0",
-  "description": "Draws each metric a session is hillclimbing as a hill in a pane, with how far up it is and an outside read on whether there is more to climb",
+  "version": "0.2.0",
+  "description": "Tiny hills above the prompt, one per metric a session is hillclimbing, showing how far up each is; hover one for details and an outside read on whether there is more to climb",
   "author": {
     "name": "Scott Smerchek",
     "url": "https://github.com/smerchek"
   },
   "license": "MIT",
   "repository": "https://github.com/smerchek/agent-plugins",
-  "keywords": ["hillclimb", "optimization", "progress", "mod"],
+  "keywords": [
+    "hillclimb",
+    "optimization",
+    "progress",
+    "mod"
+  ],
   "extensions": {
     "com.anthropic.claude-code": {
       "displayName": "Hills",

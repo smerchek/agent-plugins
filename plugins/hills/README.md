@@ -1,21 +1,23 @@
 # hills
 
-A Claude Code mod that shows a hillclimb as hills: one per metric, with a climber marking how far from the baseline toward the top you are.
+A Claude Code mod that shows a hillclimb as a row of tiny hills above the prompt, one per metric. The climbed part of each hill is solid green and the rest is a grey outline, so you can see at a glance how far up each one is. A faint blue rise after a hill means there is more to climb past it. Each hill has a short label (`img`, `boot`, `cov`). Hover a hill for its details: baseline to now, target or estimated ceiling, rounds tried and reverted, and the outside read.
 
 It needs no log file or format. After each turn it forks the session's own transcript (`$.model.fork`, served mostly from the prompt cache) and asks which metrics are being climbed, with their baseline, rounds, reverts and any stated target. A second call (`$.model.complete`, no session history) gives an outside read on each hill:
 
-- **still climbing**: steady gains
-- **leveling off**: gains shrinking toward this approach's ceiling
-- **at the top of this hill**: this approach is done
-- **higher hills past this one**: a different approach could go much further, with up to three ideas
+- **Still climbing**: steady gains
+- **Leveling off**: gains shrinking toward this approach's ceiling
+- **At the top of this hill**: this approach is done
+- **Higher hills past this one**: a different approach could go much further, with up to three ideas
 
-That read also estimates a ceiling, which becomes the summit when there is no target or the target has been passed. A blue ridge behind the hill means there is more to climb past it.
+That read also estimates a ceiling, which becomes the summit when there is no target or the target has been passed.
+
+Hover needs a surface that reports the pointer: the desktop app or the terminal's fullscreen layout.
 
 ## Use
 
-- `/hills` opens the pane and reads the climb now
+- `/hills` reads the climb now and shows the band
 - `/hills assess` asks for a fresh outside read
-- `/hills off` stops reading after each turn
+- `/hills off` hides the band and stops reading after each turn
 
 Tracking also turns on by itself when a prompt mentions hillclimbing, optimizing, slimming or reducing a size or time. It reads at most once a minute.
 

@@ -8,6 +8,7 @@ export type HillsPoint = {
 export type HillsHill = {
   id: string
   label: string
+  short: string
   unit?: string
   direction: 'higher' | 'lower'
   baseline: number

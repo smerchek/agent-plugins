@@ -12,7 +12,7 @@
       "name": "hills",
       "displayName": "Hills",
       "source": "./plugins/hills",
-      "description": "Draws each metric a session is hillclimbing as a hill in a pane, with how far up it is and an outside read on whether there is more to climb",
+      "description": "Tiny hills above the prompt, one per metric a session is hillclimbing, showing how far up each is; hover one for details and an outside read on whether there is more to climb",
       "category": "productivity"
     }
   ]

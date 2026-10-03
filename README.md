@@ -17,7 +17,7 @@ Hosts that read the open `.agents/plugins/marketplace.json` catalog (Codex, Chat
 
 | Plugin | Hosts | What it does |
 |---|---|---|
-| [hills](plugins/hills) | Claude Code | Draws each metric a session is hillclimbing as a hill, with how far up it is and an outside read on whether there is more to climb |
+| [hills](plugins/hills) | Claude Code | Tiny hills above the prompt, one per metric a session is hillclimbing, with details and an outside read on hover |
 
 ## Layout
 
