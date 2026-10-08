@@ -35,6 +35,8 @@ declare module 'claude-code' {
       perspectives: Record<string, HillsPerspective>
       isTracking: boolean
       status: string | null
+      shared: Record<string, string>
+      isSharing: boolean
     }
   }
 }

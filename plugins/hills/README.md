@@ -11,12 +11,15 @@ It needs no log file or format. After each turn it forks the session's own trans
 
 That read also estimates a ceiling, which becomes the summit when there is no target or the target has been passed.
 
+The agent sees each new outside read too. It rides along with your next prompt as context the model reads and you do not, framed as a second opinion from a reviewer that saw only the numbers. Each read goes once, and a later read of the same hill goes again when it changes. `/hills private` keeps the reads on hover only.
+
 Hover needs a surface that reports the pointer: the desktop app or the terminal's fullscreen layout.
 
 ## Use
 
 - `/hills` reads the climb now and shows the band
 - `/hills assess` asks for a fresh outside read
+- `/hills private` / `/hills share` keeps outside reads from the agent, or hands them over again (the default)
 - `/hills off` hides the band and stops reading after each turn
 
 Tracking also turns on by itself when a prompt mentions hillclimbing, optimizing, slimming or reducing a size or time. It reads at most once a minute.

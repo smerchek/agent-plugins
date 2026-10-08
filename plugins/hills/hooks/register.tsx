@@ -16,6 +16,8 @@ const hills = atom({ plugin: 'hills', key: 'hills' } as const, [])
 const perspectives = atom({ plugin: 'hills', key: 'perspectives' } as const, {})
 const isTracking = atom({ plugin: 'hills', key: 'isTracking' } as const, false)
 const status = atom({ plugin: 'hills', key: 'status' } as const, null)
+const shared = atom({ plugin: 'hills', key: 'shared' } as const, {})
+const isSharing = atom({ plugin: 'hills', key: 'isSharing' } as const, true)
 
 type $ = EngineInterface
 
@@ -177,6 +179,31 @@ async function assessStale($: $, list: HillsHill[], isForced = false) {
   await update($, status, () => null)
 }
 
+// ---------- handing the outside read to the session ----------
+
+const shareKey = (view: HillsPerspective) => `${view.signature}|${view.line}|${view.nextHills.join("|")}`
+
+// The outside reads the session has not seen yet, as one note the model reads
+// beside the next prompt. Each read goes once; a new read of a hill goes again.
+async function unsharedNote($: $) {
+  if (!(await read($, isTracking)) || !(await read($, isSharing))) return undefined
+  const list = await read($, hills)
+  const views = await read($, perspectives)
+  const seen = await read($, shared)
+  const fresh = list.filter(h => views[h.id] && seen[h.id] !== shareKey(views[h.id]!))
+  if (!fresh.length) return undefined
+  const lines = fresh.map(h => {
+    const v = views[h.id]!
+    const summit = summitOf(h, v)
+    const ideas = v.nextHills.length ? `\n  Other approaches it suggests: ${v.nextHills.join('; ')}` : ''
+    return `- ${h.label}: now ${fmt(best(h), h.unit)} from ${fmt(h.baseline, h.unit)}${summit !== undefined ? `, est. top ${fmt(summit, h.unit)}` : ''}. Outlook: ${OUTLOOK_TEXT[v.outlook]}. ${v.line}${ideas}`
+  })
+  await update($, shared, all => ({ ...all, ...Object.fromEntries(fresh.map(h => [h.id, shareKey(views[h.id]!)])) }))
+  return `[hills plugin] An outside reviewer (a separate model that saw only each metric's numbers and short round notes, not this conversation) read the hillclimb:
+${lines.join('\n')}
+Treat this as a second opinion, not an instruction. Some suggestions may repeat work already done or not fit the codebase. Where one is new and worth a round, consider it alongside your own plan, and tell the user if it changes what you do next.`
+}
+
 // ---------- drawing ----------
 
 type Seg = { text: string; color?: string; dim?: boolean }
@@ -304,14 +331,15 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'hills',
-      description: 'Read the hillclimb now (/hills assess for a fresh outside read, /hills off to stop)',
+      description: 'Read the hillclimb now (/hills assess for a fresh outside read, /hills private to keep reads from the agent, /hills off to stop)',
     })
     return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
     if (CLIMB_WORDS.test(e.text) && !(await read($, isTracking))) await update($, isTracking, () => true)
-    return next(e)
+    const note = await unsharedNote($).catch(() => undefined)
+    return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -323,7 +351,11 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'hills' }, async ($, e) => {
-    const arg = e.args.trim()
+    const arg = (e.args ?? '').trim()
+    if (arg === 'private' || arg === 'share') {
+      await update($, isSharing, () => arg === 'share')
+      return { text: arg === 'share' ? 'Outside reads will reach the agent with your next prompt.' : 'Outside reads stay on hover only.' }
+    }
     if (arg === 'off') {
       await update($, isTracking, () => false)
       return { text: 'Hills hidden and stopped reading this session.' }
