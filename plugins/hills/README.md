@@ -13,11 +13,11 @@ That read also estimates a ceiling, which becomes the summit when there is no ta
 
 The agent sees each new outside read too. It rides along with your next prompt as context the model reads and you do not, framed as a second opinion from a reviewer that saw only the numbers. Each read goes once, and a later read of the same hill goes again when it changes. `/hills private` keeps the reads on hover only.
 
-Hover needs a surface that reports the pointer: the desktop app or the terminal's fullscreen layout.
+Hover needs a surface that reports the pointer: the desktop app or the terminal's fullscreen layout. The band and the hover card cannot be selected; `/hills` prints the same details as text.
 
 ## Use
 
-- `/hills` reads the climb now and shows the band
+- `/hills` prints each hill's details into the transcript, where you can select and copy them, and reads the climb again
 - `/hills assess` asks for a fresh outside read
 - `/hills private` / `/hills share` keeps outside reads from the agent, or hands them over again (the default)
 - `/hills off` hides the band and stops reading after each turn

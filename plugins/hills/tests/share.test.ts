@@ -49,3 +49,12 @@ test('keeps reads on hover only after /hills private', async ($, on) => {
   await hills($, 'private')
   expect(await contextOf($, 'next round')).toBe('')
 })
+
+test('/hills prints the details as text', async ($, on) => {
+  const clock = engine(on, ['Distroless base is near done.'])
+  await hills($, '')
+  await clock.settle()
+  const { text } = await hills($, '')
+  expect(text).toContain('API image size')
+  expect(text).toContain('Distroless base is near done.')
+})

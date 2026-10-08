@@ -325,6 +325,16 @@ const cardLines = (hill: HillsHill, view?: HillsPerspective): Seg[][] => {
   return lines
 }
 
+// The hover cards as plain text, for the transcript, where it can be selected and copied.
+async function detailsText($: $) {
+  const list = await read($, hills)
+  if (!list.length) return undefined
+  const views = await read($, perspectives)
+  return list
+    .map(h => cardLines(h, views[h.id]).map(line => line.map(seg => seg.text).join('').trimEnd()).join('\n'))
+    .join('\n\n')
+}
+
 // ---------- hooks ----------
 
 export const register: Register = on => {
@@ -366,7 +376,8 @@ export const register: Register = on => {
       return { text: 'Asking for a fresh outside read.' }
     }
     $.clock.after(0, () => void readClimbs($, true).catch(() => undefined))
-    return { text: 'Reading the climb from this session.' }
+    const details = await detailsText($)
+    return { text: details ? `${details}\n\nReading the climb again for any new rounds.` : 'Reading the climb from this session.' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

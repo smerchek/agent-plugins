@@ -1,6 +1,6 @@
 {
   "name": "hills",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Tiny hills above the prompt, one per metric a session is hillclimbing, showing how far up each is; hover one for details and an outside read on whether there is more to climb",
   "author": {
     "name": "Scott Smerchek",
